@@ -6,6 +6,7 @@ boss.on('error', (error: Error) => console.error('pg-boss error:', error));
 
 export async function startBoss() {
   await boss.start();
+  await boss.createQueue('process-job')
   console.log('✅ pg-boss started');
 }
 

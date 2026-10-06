@@ -36,7 +36,7 @@ enum JobType {
 }
 
 enum JobStatus {
-  PENDIND
+  PENDING
   RUNNING
   COMPLETED
   FAILED
@@ -50,13 +50,13 @@ enum LogStatus {
 model Job {
 id         String      @id @default(uuid())
 type       JobType
-status     JobStatus   @default(PENDIND)
+status     JobStatus   @default(PENDING)
 payload    Json
 retryCount Int         @default(0)
 userId     String
 user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
 logs       JobLog[]
-cratedAt   DateTime    @default(now())
+createdAt  DateTime    @default(now())
 updatedAt  DateTime    @updatedAt
 }
 
