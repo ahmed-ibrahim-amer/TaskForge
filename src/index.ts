@@ -6,7 +6,6 @@ import { PrismaClient, JobType } from '@prisma/client';
 import {startBoss} from './queue';
 import boss from './queue';
 import dotenv from 'dotenv';
-import { Job } from 'pg-boss';
 import { startWorker } from './worker';
 dotenv.config();
 
@@ -26,9 +25,6 @@ interface LoginArgs {
     email: string;
     password: string;
 }
-interface AddJobArgs {
-    name: string;
-}
 interface CreateJobArgs {
     type: JobType;
     payload: string;
@@ -46,15 +42,14 @@ const createToken = (id: string, role: string): string => {
 const typeDefs = `#graphql
     type Query {
         hello: String,
-        jobs: [String],
         myJobs:[Job],
         job(id: String): Job
     }
     type Mutation {
-        addJob(name: String): String
         register(email: String, password: String): AuthPayload
         login(email: String, password: String): AuthPayload
         createJob(type: JobType, payload: String): Job
+        retryJob(id: String): Job
     }
     type User {
         id:String,
@@ -75,21 +70,31 @@ const typeDefs = `#graphql
         COMPLETED
         FAILED
     }
+    enum LogStatus {
+        SUCCESS
+        FAILED
+    }
     type Job {
         id: String
         type: JobType
+        retryCount: Int
         status: JobStatus
+        logs: [JobLog]
+        createdAt: String
+    }
+    type JobLog {
+        id: String
+        attempt: Int
+        status: LogStatus
+        errorMessage: String
         createdAt: String
     }
 
 `;
 
-let jobsList : string[] = ["job A" , "job B"];
-
 const resolvers = {
     Query:{
         hello:  () => "hello string" ,
-        jobs: ()=> jobsList ,
         myJobs: async (parent: unknown, args: unknown, context: MyContext) => {
             if (!context.user) {
                     throw new Error('You must be logged in');
@@ -117,13 +122,6 @@ const resolvers = {
 
     },
     Mutation: {
-        addJob(parent:unknown , args:AddJobArgs , context:MyContext){
-            if(!context.user){
-                throw new Error('You must be logged in');
-            }
-            jobsList.push(args.name);
-            return args.name;
-        },
         register: async(parent: unknown , args: RegisterArgs , context: MyContext) => {
 
             const {email , password} = args;
@@ -173,12 +171,52 @@ const resolvers = {
         });
         await boss.send('process-job', {jobId: job.id },{ retryLimit: 2 }) //boss.send take three argument 1.queue name 2.data 3.options
         return job;
+    },
+    retryJob: async (parent:unknown , args: JobIdArgs , context:MyContext) =>{
+        if(!context.user){
+            throw new Error("You must be logged in");
+        }
+        const job = await context.prisma.job.findUnique({
+            where:{id: args.id},
+        });
+
+        if(!job){
+                throw new Error("Job not found");
+            }
+
+            if(job.userId !== context.user.id && context.user.role !== "ADMIN"){
+                throw new Error("You don't have permission to retry this job");
+            }
+
+            if(job.status !== "FAILED"){
+                throw new Error("Only failed jobs can be retried");
+            }
+
+        const updatedJob = await context.prisma.job.update({
+            where: { id: args.id },
+            data: {
+                status: 'PENDING',
+                retryCount: 0,
+            },
+    });
+    await boss.send("process-job"  ,{jobId: job.id} , {retryLimit: 2});
+   
+    return updatedJob;
     }
     },
     Job: {
         createdAt: (parent: { createdAt: Date | null }) =>
-        parent.createdAt ? parent.createdAt.toISOString() : null
+        parent.createdAt ? parent.createdAt.toISOString() : null,
+        logs:(parent: {id: string}, args: unknown , context:MyContext)=>{
+            return  context.prisma.jobLog.findMany({
+                where:{jobId :parent.id},
+                orderBy:{createdAt:'asc'}
+            });
+        }       
     },
+    JobLog:{ createdAt: (parent: { createdAt: Date | null }) =>
+        parent.createdAt ? parent.createdAt.toISOString() : null
+}
 }
 
 //create new server
