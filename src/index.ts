@@ -7,6 +7,8 @@ import {startBoss} from './queue';
 import boss from './queue';
 import dotenv from 'dotenv';
 import { startWorker } from './worker';
+import { JobStatus } from '@prisma/client';
+
 dotenv.config();
 
 const prisma = new PrismaClient();
@@ -32,6 +34,9 @@ interface CreateJobArgs {
 interface JobIdArgs {
   id: string;
 }
+interface AllJobsArgs {
+    status?:JobStatus;
+}
 const createToken = (id: string, role: string): string => {
     return jwt.sign({id,role},process.env.SECRET_TOKEN_KEY as string,{
         expiresIn:"50m"
@@ -44,6 +49,7 @@ const typeDefs = `#graphql
         hello: String,
         myJobs:[Job],
         job(id: String): Job
+        allJobs(status:JobStatus):[Job]
     }
     type Mutation {
         register(email: String, password: String): AuthPayload
@@ -118,8 +124,20 @@ const resolvers = {
                 throw new Error("You dont have Authorization to see this view");
             }
         return job
+    },
+    allJobs :  async(parent:unknown , args: AllJobsArgs, context:MyContext)=>{
+        if(!context.user){
+            throw new Error("You must be logged in")
+        }
+        if(context.user.role !== "ADMIN"){
+                throw new Error("You don't have permission to view all jobs");
+        }
+        const jobs = await context.prisma.job.findMany({
+            where: { status: args.status },
+            orderBy:{createdAt :"desc"}
+        })
+        return jobs;
     }
-
     },
     Mutation: {
         register: async(parent: unknown , args: RegisterArgs , context: MyContext) => {
