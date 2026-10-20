@@ -37,6 +37,12 @@ interface JobIdArgs {
 interface AllJobsArgs {
     status?:JobStatus;
 }
+
+interface createRecurringJob {
+    cron:string;
+    type : JobType;
+    payload:string;
+}
 const createToken = (id: string, role: string): string => {
     return jwt.sign({id,role},process.env.SECRET_TOKEN_KEY as string,{
         expiresIn:"50m"
@@ -56,6 +62,7 @@ const typeDefs = `#graphql
         login(email: String, password: String): AuthPayload
         createJob(type: JobType, payload: String): Job
         retryJob(id: String): Job
+        createRecurringJob(cron: String, type: JobType, payload: String): RecurringJob
     }
     type User {
         id:String,
@@ -64,6 +71,12 @@ const typeDefs = `#graphql
     type AuthPayload {
         token: String,
         user: User
+    }
+    type RecurringJob {
+        id: String
+        cron: String
+        type: JobType
+        createdAt: String
     }
     enum JobType {
         REPORT
@@ -218,8 +231,36 @@ const resolvers = {
             },
     });
     await boss.send("process-job"  ,{jobId: job.id} , {retryLimit: 2});
-   
+
     return updatedJob;
+    },
+    createRecurringJob:async (parent:unknown , args:createRecurringJob , context:MyContext)=>{
+        if(!context.user){
+            throw new Error("You must be logged in")
+        }
+        if(context.user.role !== "ADMIN"){
+            throw new Error("You dont have permission");
+        }
+        const recurringJob = await context.prisma.recurringJob.create({
+            data: {
+                cron: args.cron,
+                type: args.type,
+                payload: args.payload,
+                createdById: context.user.id,
+            },
+    });
+        try{
+            await boss.schedule(
+                'recurring-job',
+                args.cron,
+                {recurringJobId: recurringJob.id},
+                {key:recurringJob.id, tz :'UTC'}
+            );
+        }catch(error){
+            await context.prisma.recurringJob.delete({ where: { id: recurringJob.id } });
+            throw error;
+        }
+        return recurringJob;
     }
     },
     Job: {
@@ -234,7 +275,11 @@ const resolvers = {
     },
     JobLog:{ createdAt: (parent: { createdAt: Date | null }) =>
         parent.createdAt ? parent.createdAt.toISOString() : null
-}
+},
+    RecurringJob: {
+        createdAt: (parent: { createdAt: Date | null }) =>
+        parent.createdAt ? parent.createdAt.toISOString() : null,
+    },
 }
 
 //create new server
@@ -244,7 +289,7 @@ async function start(){
     await startBoss();
     startWorker();
 const {url} = await startStandaloneServer(server, 
-   { 
+{ 
     listen:{ port:4000 },
     context: async ({req}): Promise<MyContext> =>{
         const authHeader = req.headers.authorization || '';

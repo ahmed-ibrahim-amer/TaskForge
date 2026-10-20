@@ -70,6 +70,28 @@ export function startWorker() {
 
     throw error; // re-throw so pg-boss knows to retry (if not maxed out)
 }
+    boss.work("recurring-job", async ([job]) => {
+    const { recurringJobId } = job.data as {
+        recurringJobId: string;
+    };
+
+    const recurringJob = await prisma.recurringJob.findUnique({
+        where: { id: recurringJobId }
+    });
+
+    if (!recurringJob) {
+        // Use the actual schedule name/identifier here.
+        await boss.unschedule("recurring-job", recurringJobId);
+        return;
+    }
+
+    await boss.send(
+        "process-job",
+        { jobId: recurringJob.id },
+        { retryLimit: 2 }
+    );
+});
+
     });
 
     console.log('👷 Worker is listening for jobs');

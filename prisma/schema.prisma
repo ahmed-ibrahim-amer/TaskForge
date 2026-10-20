@@ -14,20 +14,19 @@ datasource db {
 }
 
 enum Role {
-    USER
-    ADMIN
+  USER
+  ADMIN
 }
 
 model User {
-    id        String   @id @default(uuid())
-    email     String   @unique
-    password  String  
-    role      Role     @default(USER)
-    createdAt DateTime @default(now())
-    jobs      Job[]
+  id            String         @id @default(uuid())
+  email         String         @unique
+  password      String
+  role          Role           @default(USER)
+  createdAt     DateTime       @default(now())
+  jobs          Job[]
+  recurringJobs RecurringJob[]
 }
-
-
 
 enum JobType {
   REPORT
@@ -48,25 +47,34 @@ enum LogStatus {
 }
 
 model Job {
-id         String      @id @default(uuid())
-type       JobType
-status     JobStatus   @default(PENDING)
-payload    Json
-retryCount Int         @default(0)
-userId     String
-user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-logs       JobLog[]
-createdAt  DateTime    @default(now())
-updatedAt  DateTime    @updatedAt
+  id         String    @id @default(uuid())
+  type       JobType
+  status     JobStatus @default(PENDING)
+  payload    Json
+  retryCount Int       @default(0)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  logs       JobLog[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 }
 
 model JobLog {
-  id           String       @id @default(uuid())
+  id           String    @id @default(uuid())
   jobId        String
-  job          Job          @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  job          Job       @relation(fields: [jobId], references: [id], onDelete: Cascade)
   attempt      Int
   status       LogStatus
   errorMessage String?
-  createdAt    DateTime     @default(now())
+  createdAt    DateTime  @default(now())
 }
 
+model RecurringJob {
+  id          String   @id @default(uuid())
+  cron        String
+  type        JobType
+  payload     Json
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+}
