@@ -1,4 +1,4 @@
-import { PrismaClient } from '@prisma/client';
+import { PrismaClient, Prisma } from '@prisma/client';
 import boss from './queue';
 
 
@@ -11,9 +11,12 @@ export function startWorker() {
         console.log(`Processing job: ${jobId}`);
 
         const jobData = await prisma.job.findUnique({where:{id: jobId}});
-
-            if(String(jobData?.payload).includes("fail")){
-                throw new Error("Simulated failure for testing");
+            if (!jobData) {
+                console.warn(`Job ${jobId} not found in database. Skipping.`);
+                return;
+            }
+            if (String(jobData.payload).includes('fail')) {
+            throw new Error('Simulated failure for testing');
             }
         // Step 1: mark as RUNNING
         await prisma.job.update({
@@ -70,30 +73,30 @@ export function startWorker() {
 
     throw error; // re-throw so pg-boss knows to retry (if not maxed out)
 }
-    boss.work("recurring-job", async ([job]) => {
-    const { recurringJobId } = job.data as {
-        recurringJobId: string;
-    };
-
-    const recurringJob = await prisma.recurringJob.findUnique({
-        where: { id: recurringJobId }
     });
+    boss.work('recurring-job', async ([job]) => {
+        const { recurringJobId } = job.data as { recurringJobId: string };
 
-    if (!recurringJob) {
-        // Use the actual schedule name/identifier here.
-        await boss.unschedule("recurring-job", recurringJobId);
-        return;
-    }
+        const recurringJob = await prisma.recurringJob.findUnique({
+            where: { id: recurringJobId },
+        });
 
-    await boss.send(
-        "process-job",
-        { jobId: recurringJob.id },
-        { retryLimit: 2 }
-    );
-});
+        if (!recurringJob) {
+            await boss.unschedule('recurring-job', recurringJobId);
+            return;
+        }
 
+        const newJob = await prisma.job.create({
+            data: {
+                type: recurringJob.type,
+                payload: recurringJob.payload as Prisma.InputJsonValue,
+                userId: recurringJob.createdById,
+            },
+        });
+
+        await boss.send('process-job', { jobId: newJob.id }, { retryLimit: 2 });
+        console.log(`Recurring job created a new job: ${newJob.id}`);
     });
-
     console.log('👷 Worker is listening for jobs');
 }
 

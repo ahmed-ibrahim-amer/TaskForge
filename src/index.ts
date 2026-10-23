@@ -32,13 +32,13 @@ interface CreateJobArgs {
     payload: string;
 }
 interface JobIdArgs {
-  id: string;
+    id: string;
 }
 interface AllJobsArgs {
     status?:JobStatus;
 }
 
-interface createRecurringJob {
+interface CreateRecurringJobArgs {
     cron:string;
     type : JobType;
     payload:string;
@@ -234,12 +234,12 @@ const resolvers = {
 
     return updatedJob;
     },
-    createRecurringJob:async (parent:unknown , args:createRecurringJob , context:MyContext)=>{
+    createRecurringJob:async (parent:unknown , args:CreateRecurringJobArgs , context:MyContext)=>{
         if(!context.user){
             throw new Error("You must be logged in")
         }
         if(context.user.role !== "ADMIN"){
-            throw new Error("You dont have permission");
+            throw new Error("You don't have permission to create recurring jobs");
         }
         const recurringJob = await context.prisma.recurringJob.create({
             data: {
