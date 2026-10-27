@@ -1,5 +1,6 @@
 import { PrismaClient, Prisma } from '@prisma/client';
 import boss from './queue';
+import { runJob } from  './handlers';
 
 
 const prisma = new PrismaClient();
@@ -25,12 +26,12 @@ export function startWorker() {
         });
 
         // Step 2: fake work (pretend it takes some time)
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const result = await runJob(prisma , jobData);
 
         // Step 3: mark as COMPLETED
         await prisma.job.update({
             where: { id: jobId },
-            data: { status: 'COMPLETED' },
+            data: { status: 'COMPLETED' , result},
         });
         //Job Log row
         await prisma.jobLog.create({

@@ -98,6 +98,7 @@ const typeDefs = `#graphql
         type: JobType
         retryCount: Int
         status: JobStatus
+        result: String
         logs: [JobLog]
         createdAt: String
     }
@@ -264,8 +265,13 @@ const resolvers = {
     }
     },
     Job: {
+        //this is responsible for convert result value to text
+        result:(parent : {result: unknown})=>
+            parent.result == null ? null: JSON.stringify(parent.result),
+
         createdAt: (parent: { createdAt: Date | null }) =>
         parent.createdAt ? parent.createdAt.toISOString() : null,
+
         logs:(parent: {id: string}, args: unknown , context:MyContext)=>{
             return  context.prisma.jobLog.findMany({
                 where:{jobId :parent.id},
